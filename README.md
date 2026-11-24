@@ -12,11 +12,14 @@ The model combines four MRI modalities—T1, T1CE, T2, and FLAIR—to identify t
 |---|---|
 | Training Dice score | ~0.91 |
 | Validation Dice score | ~0.88 |
-| Final training loss | ~0.12–0.16 |
+| Final training loss (saved notebook, epoch 40) | 0.1095 |
+| Final validation loss (saved notebook, epoch 40) | 0.1561 |
 | Training epochs | 40 |
 | Input dimensions | 240 × 240 × 4 |
 
 The model demonstrated close agreement between predicted segmentation masks and ground-truth annotations in the qualitative examples.
+
+The epoch-40 losses are from the saved notebook output and have not been independently reproduced.
 
 ## Problem Statement
 
@@ -61,6 +64,19 @@ Each 3D MRI volume is processed into 2D slices with four input channels.
 - Encode segmentation labels into the model's four target classes.
 - Split patient data into training, validation, and test sets.
 
+The checked-in notebook splits patient directories before individual slices enter the data loaders. After excluding case 355, it holds out 15% for testing and then 20% of the remaining patients for validation, using random seed `42` in both steps.
+
+| Split | Patients | Share |
+|---|---:|---:|
+| Training | 249 | 67.7% |
+| Validation | 63 | 17.1% |
+| Test | 56 | 15.2% |
+| Total | 368 | 100% |
+
+These counts come from the saved notebook output. The original academic report describes a 70% / 20% / 10% split.
+
+If a segmentation mask needs resizing, the notebook uses OpenCV's default interpolation, which can introduce intermediate values between discrete class labels. The saved results do not establish whether this affected the original run.
+
 ### 2. U-Net Architecture
 
 The segmentation model uses an encoder–decoder architecture with skip connections.
@@ -83,8 +99,10 @@ The segmentation model uses an encoder–decoder architecture with skip connecti
 | Batch size | 16 |
 | Epochs | 40 |
 | Loss function | Dice loss + cross-entropy loss |
-| Regularization | Weight decay |
-| Data augmentation | Flips |
+| Optimizer weight decay | None (`weight_decay=0`) |
+| Training data augmentation | Random horizontal flips, random rotations of 0°, 90°, 180°, or 270°, and occasional brightness scaling |
+
+The same spatial transformations are applied to each image and its mask. Brightness scaling applies only to the image. Validation uses no augmentation.
 
 The model is evaluated using the Dice similarity coefficient, which measures overlap between predicted and ground-truth segmentation regions.
 
@@ -114,7 +132,7 @@ Brain-Tumor-Segmentation/
 
 ## Installation
 
-Python 3.10 and a CUDA-compatible GPU are recommended for the existing notebook.
+Use Python 3.10. Running the checked-in notebook requires a CUDA-enabled GPU and a CUDA-enabled PyTorch build because the notebook calls `.cuda()` directly.
 
 ### 1. Create an environment
 
@@ -132,16 +150,18 @@ https://pytorch.org/get-started/locally/
 ### 3. Install dependencies
 
 ```bash
-pip install numpy nibabel opencv-python scikit-learn matplotlib tqdm jupyter
+python -m pip install numpy nibabel opencv-python matplotlib tqdm torchinfo jupyter
 ```
 
 ### 4. Run the notebook
 
 Open `Brain Tumor Segmentation/final-project.ipynb` in Jupyter Notebook or VS Code.
 
-Configure the dataset paths for your local BraTS 2020 download before running the cells.
+The BraTS 2020 dataset is not included. In notebook cell 3, set `TRAIN_PATH` to the extracted BraTS 2020 training directory containing the patient folders. The notebook derives its validation and test sets from this directory. Set `OUTPUT_PATH` if you want to store or reuse preprocessed arrays in a location other than `./preprocessed`.
 
-**Note:** The current implementation contains CUDA-specific calls and requires adjustments to run on CPU-only hardware.
+On a first run, or if the preprocessed arrays are missing, uncomment and execute the preprocessing loop in cell 6 after running cells 1–4. It writes per-patient `<case_id>_images.npy` and `<case_id>_masks.npy` files under `OUTPUT_PATH`. The data loaders and prediction cells read those arrays.
+
+The training cell writes `best_model.pth` when validation Dice improves. The following save cell writes `history.pkl` and the final checkpoint `brats_unet_model.pth`. The later reload and evaluation cells expect `best_model.pth` and `history.pkl` in the notebook's working directory. The repository includes the notebook and academic report. The arrays, checkpoints, and history file are generated locally.
 
 ## Future Improvements
 
